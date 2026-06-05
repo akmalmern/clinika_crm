@@ -1,0 +1,253 @@
+// =============================================================================
+// Klinika CRM — Prisma schema (Phase 1)
+// =============================================================================
+// QOIDALAR (spec 1.5 / 1.6):
+//  - Barcha PK -> UUID v7 (app-layer'da `uuidv7()` orqali inject qilinadi —
+//    qarang: core/prisma/prisma-extensions.ts). Schema'dagi @default(uuid())
+//    faqat (a) Prisma create-input'da `id`ni ixtiyoriy qiladi (TS uchun) va
+//    (b) extension biror sababga ko'ra ishlamasa, fallback bo'ladi. Haqiqiy
+//    qiymat har doim UUID v7 (extension), bu DB-level default EMAS (app-level).
+//  - Vaqt -> har doim @db.Timestamptz(6) (UTC).
+//  - status/role/category kabi maydonlar PostgreSQL enum EMAS -> String
+//    + ilova darajasida validatsiya (additive o'zgarishlar uchun).
+//  - Soft-delete -> deleted_at. Unique cheklovlar PARTIAL unique index sifatida
+//    (WHERE deleted_at IS NULL) hand-authored migration SQL'da yaratiladi,
+//    chunki Prisma schema partial unique'ni ifodalay olmaydi. Shu sababli bu
+//    yerda @unique YO'Q — kodda findUnique emas, findFirst ishlatiladi.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- PLATFORMA (SaaS) — bu jadvallarda clinic_id BO'LMAYDI ----
+
+/// Platforma egasi(lari). Tenant'ga tegishli emas.
+model SuperAdmin {
+  id           String    @id @default(uuid()) @db.Uuid
+  fullName     String    @map("full_name")
+  email        String
+  passwordHash String    @map("password_hash")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  // Partial unique (email) WHERE deleted_at IS NULL -> migration SQL'da
+  @@map("super_admins")
+}
+
+/// Klinika = tenant. Uning `id` boshqa jadvallarda `clinic_id` bo'ladi.
+model Clinic {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String
+  status    String    @default("ACTIVE") // ACTIVE | TRIAL | SUSPENDED | ... (app-validated)
+  logoUrl   String?   @map("logo_url")
+  address   String?
+  phone     String?
+  email     String?
+  settings  Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  members       ClinicMember[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  // Eslatma: Transaction.clinicId — denormalizatsiya (tenant filtri/hisobot uchun),
+  // clinics'ga FK YO'Q (faqat invoices'ga FK). Shu sababli bu yerda relation yo'q.
+
+  // Partial unique (slug) WHERE deleted_at IS NULL -> migration SQL'da
+  @@index([status])
+  @@map("clinics")
+}
+
+// ---- KLINIKA ICHIDAGI FOYDALANUVCHILAR ----
+
+/// Foydalanuvchi = global identifikator (insondan biri). Klinikadagi a'zoligi
+/// `clinic_members` orqali. Bir foydalanuvchi bir nechta klinikada bo'lishi mumkin.
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  fullName     String    @map("full_name")
+  phone        String?
+  email        String?
+  passwordHash String    @map("password_hash")
+  isActive     Boolean   @default(true) @map("is_active")
+  avatarUrl    String?   @map("avatar_url")
+  birthDate    DateTime? @map("birth_date") @db.Date
+  gender       String?
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  memberships ClinicMember[]
+
+  @@index([email])
+  @@index([phone])
+  @@map("users")
+}
+
+/// Klinikadagi a'zolik + rol. Tenant'ga tegishli (clinic_id bor).
+model ClinicMember {
+  id             String    @id @default(uuid()) @db.Uuid
+  clinicId       String    @map("clinic_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  role           String // CLINIC_ADMIN | DOCTOR | RECEPTIONIST | NURSE | CASHIER (app-validated)
+  position       String?
+  specialization String?
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Partial unique (user_id, clinic_id) WHERE deleted_at IS NULL -> migration SQL'da
+  @@index([clinicId])
+  @@index([userId])
+  @@map("clinic_members")
+}
+
+// ---- AUDIT (append-only / immutable) ----
+
+/// Audit log. updated_at/deleted_at YO'Q — faqat qo'shiladi, o'zgartirilmaydi.
+/// clinic_id null bo'lishi mumkin (super admin harakatlari uchun).
+/// Tashqi FK qo'yilmaydi — log egasi o'chsa ham saqlanib qolsin (immutability).
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  clinicId  String?  @map("clinic_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  actorType String   @map("actor_type") // SUPER_ADMIN | USER | SYSTEM
+  action    String // AUTH_LOGIN | AUTH_LOGOUT | FILE_DOWNLOAD | ...
+  entity    String?
+  entityId  String?  @map("entity_id")
+  metadata  Json     @default("{}")
+  ip        String?
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([clinicId, createdAt])
+  @@index([userId])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+// ---- OBUNA / TARIFLAR (Platforma <-> Klinika) ----
+
+/// Tarif (BASIC/STANDARD/PREMIUM). Platforma darajasida — clinic_id BO'LMAYDI.
+/// Pul Decimal sifatida (Float EMAS, spec 1.5). limits/features — JSON.
+model SubscriptionPlan {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String
+  price        Decimal   @db.Decimal(14, 2)
+  currency     String    @default("UZS")
+  billingCycle String    @map("billing_cycle") // MONTHLY | YEARLY (app-validated)
+  limits       Json      @default("{}") // { maxStaff, maxPatients, storageGb, smsCount }
+  features     Json      @default("{}") // { pharmacy, telegram, ... }
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  subscriptions Subscription[]
+
+  // Partial unique (name) WHERE deleted_at IS NULL -> migration SQL'da
+  @@index([isActive])
+  @@map("subscription_plans")
+}
+
+/// Klinika obunasi. Tenant'ga tegishli (clinic_id bor).
+/// status: ACTIVE | TRIAL | PAST_DUE | SUSPENDED | CANCELLED (DB enum EMAS).
+model Subscription {
+  id              String    @id @default(uuid()) @db.Uuid
+  clinicId        String    @map("clinic_id") @db.Uuid
+  planId          String    @map("plan_id") @db.Uuid
+  status          String    @default("TRIAL")
+  startDate       DateTime  @map("start_date") @db.Timestamptz(6)
+  endDate         DateTime? @map("end_date") @db.Timestamptz(6)
+  nextBillingDate DateTime? @map("next_billing_date") @db.Timestamptz(6)
+  graceUntil      DateTime? @map("grace_until") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  clinic   Clinic           @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  invoices Invoice[]
+
+  @@index([clinicId])
+  @@index([status, nextBillingDate])
+  @@map("subscriptions")
+}
+
+// ---- HISOB-FAKTURALAR (Platforma -> Klinika, abonent to'lovi) ----
+// Obuna sikli kelganda cron avtomatik invoice yaratadi. Pul Decimal (Float EMAS).
+// debt_amount = total_amount - paid_amount (denormalized — tez so'rov uchun).
+// status: UNPAID | PARTIAL | PAID | OVERDUE | CANCELLED (DB enum EMAS — string).
+model Invoice {
+  id             String    @id @default(uuid()) @db.Uuid
+  clinicId       String    @map("clinic_id") @db.Uuid
+  subscriptionId String?   @map("subscription_id") @db.Uuid
+  invoiceNumber  String    @map("invoice_number")
+  totalAmount    Decimal   @map("total_amount") @db.Decimal(14, 2)
+  paidAmount     Decimal   @default(0) @map("paid_amount") @db.Decimal(14, 2)
+  debtAmount     Decimal   @map("debt_amount") @db.Decimal(14, 2)
+  currency       String    @default("UZS")
+  status         String    @default("UNPAID")
+  // Obuna davri (qaysi sikl uchun): idempotentlik kaliti (subscription_id, period_start).
+  periodStart    DateTime? @map("period_start") @db.Timestamptz(6)
+  periodEnd      DateTime? @map("period_end") @db.Timestamptz(6)
+  dueDate        DateTime  @map("due_date") @db.Timestamptz(6)
+  paidAt         DateTime? @map("paid_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  transactions Transaction[]
+
+  // Partial unique: invoice_number; (subscription_id, period_start) -> migration SQL'da
+  @@index([clinicId, status])
+  @@index([clinicId, createdAt])
+  @@index([status, dueDate])
+  @@map("invoices")
+}
+
+// ---- TRANZAKSIYALAR (to'lov yozuvlari — moliyaviy ledger, soft-delete YO'Q) ----
+// provider: PAYME | CLICK | MANUAL. Idempotency: (provider, provider_tx_id) unique.
+// state — provayderga xos raqamli holat (Payme: 1,2,-1,-2). raw — to'liq payload.
+model Transaction {
+  id           String    @id @default(uuid()) @db.Uuid
+  clinicId     String    @map("clinic_id") @db.Uuid
+  invoiceId    String    @map("invoice_id") @db.Uuid
+  provider     String
+  method       String? // CASH | BANK_TRANSFER | CARD | ONLINE
+  providerTxId String?   @map("provider_tx_id")
+  reference    String?
+  amount       Decimal   @db.Decimal(14, 2)
+  status       String    @default("PENDING") // PENDING | PAID | CANCELLED | FAILED
+  state        Int?
+  cancelReason Int?      @map("cancel_reason")
+  performedAt  DateTime? @map("performed_at") @db.Timestamptz(6)
+  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  confirmedBy  String?   @map("confirmed_by") @db.Uuid
+  raw          Json      @default("{}")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Partial unique (provider, provider_tx_id) WHERE provider_tx_id IS NOT NULL -> migration SQL'da
+  @@index([clinicId, createdAt])
+  @@index([invoiceId])
+  @@index([provider, status])
+  @@map("transactions")
+}

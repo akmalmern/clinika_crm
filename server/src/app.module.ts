@@ -1,10 +1,92 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+
+import configuration, { ThrottleConfig } from './config/configuration';
+import { validateEnv } from './config/env.validation';
+
+import { PrismaModule } from './core/prisma/prisma.module';
+import { RedisModule } from './core/redis/redis.module';
+
+import { AuditModule } from './modules/audit/audit.module';
+import { AuditInterceptor } from './modules/audit/audit.interceptor';
+import { AuthModule } from './modules/auth/auth.module';
+import { PlansModule } from './modules/plans/plans.module';
+import { ClinicsModule } from './modules/clinics/clinics.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { MembersModule } from './modules/members/members.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { BillingSchedulerModule } from './modules/billing/billing-scheduler.module';
+
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { ClinicActiveGuard } from './common/guards/clinic-active.guard';
+import { RolesGuard } from './common/guards/roles.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
+
+import { HealthController } from './health/health.controller';
+
+/**
+ * Billing cron (BullMQ) test muhitida YUKLANMAYDI — e2e testlar Redis/BullMQ
+ * ulanishini talab qilmasin (DI grafigi mock infra bilan ko'tariladi).
+ * Production/dev'da esa kunlik cron ishlaydi.
+ */
+const schedulerModules =
+  process.env.NODE_ENV === 'test' ? [] : [BillingSchedulerModule];
 
 @Module({
-  imports: [],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [
+    // Konfiguratsiya — global, env validatsiyasi bilan (fail-fast).
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+      load: [configuration],
+      validate: validateEnv,
+    }),
+
+    // Rate limiting (global throttler).
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const t = config.getOrThrow<ThrottleConfig>('throttle');
+        return { throttlers: [{ ttl: t.ttl, limit: t.limit }] };
+      },
+    }),
+
+    // Core infratuzilma
+    PrismaModule,
+    RedisModule,
+    AuditModule,
+
+    // Funksional modullar
+    AuthModule,
+    PlansModule,
+    ClinicsModule,
+    SubscriptionsModule,
+    MembersModule,
+    BillingModule,
+    ...schedulerModules,
+  ],
+  controllers: [HealthController],
+  providers: [
+    // Global guard'lar (tartib muhim):
+    // throttle -> auth -> clinic-active(suspend) -> roles -> permissions
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: ClinicActiveGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
+
+    // Global xato filtri
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+
+    // Global interceptor'lar: javob formati + audit
+    { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+  ],
 })
 export class AppModule {}
+// Eslatma: TenantMiddleware main.ts'da `app.use(tenantContextMiddleware)` orqali
+// global Express middleware sifatida ulanadi (NestJS routing'idan oldin ishlaydi).

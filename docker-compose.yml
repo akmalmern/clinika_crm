@@ -1,0 +1,132 @@
+# =============================================================================
+# Klinika CRM — Phase 1 infratuzilmasi
+# Bitta buyruq bilan ko'tariladi:  docker compose up -d
+#   - PostgreSQL 16  (asosiy baza)
+#   - Redis 7        (sessiya / refresh token / blacklist)
+#   - MinIO          (S3-mos object storage — fayllar Phase 4'da)
+#   - backend        (NestJS — migrate deploy + seed + start)
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clinic_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clinic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clinic_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-clinic_crm}
+      # Vaqt har doim UTC — spec talabi
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-clinic} -d ${POSTGRES_DB:-clinic_crm}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - clinic_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: clinic_redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--requirepass', '${REDIS_PASSWORD:-redis_pass}']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD:-redis_pass}', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - clinic_net
+
+  minio:
+    image: minio/minio:latest
+    container_name: clinic_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - '${MINIO_PORT:-9000}:9000'   # S3 API
+      - '${MINIO_CONSOLE_PORT:-9001}:9001'   # Web konsol
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - clinic_net
+
+  # MinIO bucket'ini bir martalik yaratadi (fayllar Phase 4'da ishlatiladi)
+  minio_init:
+    image: minio/mc:latest
+    container_name: clinic_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      mc mb --ignore-existing local/${MINIO_BUCKET:-clinic-files};
+      mc anonymous set none local/${MINIO_BUCKET:-clinic-files};
+      echo 'MinIO bucket tayyor: ${MINIO_BUCKET:-clinic-files}';
+      exit 0;
+      "
+    networks:
+      - clinic_net
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: clinic_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - ./server/.env
+    # Compose'dagi environment env_file'dan ustun turadi:
+    # konteyner ichidan localhost emas, servis nomlari ishlatiladi.
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clinic}:${POSTGRES_PASSWORD:-clinic_pass}@postgres:5432/${POSTGRES_DB:-clinic_crm}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_pass}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: 'false'
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-clinic-files}
+    ports:
+      - '${BACKEND_PORT:-3000}:3000'
+    networks:
+      - clinic_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  clinic_net:
+    driver: bridge
