@@ -31,7 +31,7 @@ export class PaymeController {
       body && typeof body === 'object' && 'id' in body ? body.id : null;
 
     if (!this.payme.checkAuth(auth)) {
-      res.json({
+      res.status(200).json({
         jsonrpc: '2.0',
         id,
         error: {
@@ -54,9 +54,9 @@ export class PaymeController {
 
     try {
       const out = await this.payme.dispatch(method, params);
-      res.json({ jsonrpc: '2.0', id, ...out });
+      res.status(200).json({ jsonrpc: '2.0', id, ...out });
     } catch {
-      res.json({
+      res.status(200).json({
         jsonrpc: '2.0',
         id,
         error: {

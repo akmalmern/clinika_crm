@@ -42,7 +42,9 @@ export class BillingAdminController {
   ) {}
 
   @Get('invoices')
-  @ApiOperation({ summary: "Barcha hisob-fakturalar (filter: status/klinika/sana)" })
+  @ApiOperation({
+    summary: 'Barcha hisob-fakturalar (filter: status/klinika/sana)',
+  })
   listInvoices(@Query() query: ListInvoicesQueryDto) {
     return this.invoiceService.findAll(query, { clinicId: query.clinicId });
   }
@@ -73,7 +75,10 @@ export class BillingAdminController {
   @ApiOperation({
     summary: "Qo'lda to'lov (naqd/bank) — invoice PAID/PARTIAL, audit majburiy",
   })
-  manual(@Body() dto: ManualPaymentDto, @CurrentUser() user: AuthenticatedUser) {
+  manual(
+    @Body() dto: ManualPaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.manualPayment.record(dto, user.userId);
   }
 

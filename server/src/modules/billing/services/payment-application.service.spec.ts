@@ -29,9 +29,7 @@ describe('PaymentApplicationService.confirmPayment', () => {
           .mockResolvedValue(overrides.updatedInvoice ?? overrides.invoice),
       },
       subscription: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValue(overrides.subscription ?? null),
+        findFirst: jest.fn().mockResolvedValue(overrides.subscription ?? null),
         update: jest.fn().mockResolvedValue({}),
       },
       clinic: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
@@ -41,8 +39,8 @@ describe('PaymentApplicationService.confirmPayment', () => {
 
   function makeService(tx: ReturnType<typeof makeTx>) {
     const prisma = {
-      $transaction: jest.fn(
-        async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+      $transaction: jest.fn(async (cb: (t: unknown) => Promise<unknown>) =>
+        cb(tx),
       ),
     };
     return new PaymentApplicationService(prisma as never);

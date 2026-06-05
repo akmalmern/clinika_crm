@@ -37,6 +37,13 @@ export interface MinioConfig {
   bucket: string;
 }
 
+export interface StorageConfig {
+  /** Signed (vaqtinchalik) URL amal qilish muddati (sekund). */
+  signedUrlTtl: number;
+  /** Bitta fayl maksimal hajmi (bayt). */
+  maxFileSize: number;
+}
+
 export interface BillingConfig {
   trialDays: number;
   defaultCurrency: string;
@@ -100,6 +107,12 @@ export default () => ({
     secretKey: process.env.MINIO_ROOT_PASSWORD ?? 'minioadmin',
     bucket: process.env.MINIO_BUCKET ?? 'clinic-files',
   } satisfies MinioConfig,
+
+  storage: {
+    signedUrlTtl: parseInt(process.env.STORAGE_SIGNED_URL_TTL ?? '300', 10),
+    maxFileSize:
+      parseInt(process.env.STORAGE_MAX_FILE_MB ?? '15', 10) * 1024 * 1024,
+  } satisfies StorageConfig,
 
   billing: {
     trialDays: parseInt(process.env.TRIAL_DAYS ?? '14', 10),

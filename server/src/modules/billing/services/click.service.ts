@@ -72,7 +72,11 @@ export class ClickService {
   // ---- Prepare (action=0) ----
   private async prepare(params: ClickParams): Promise<ClickResponse> {
     if (!this.verifyPrepareSign(params)) {
-      return this.fail(params, ClickError.SIGN_CHECK_FAILED, 'SIGN CHECK FAILED');
+      return this.fail(
+        params,
+        ClickError.SIGN_CHECK_FAILED,
+        'SIGN CHECK FAILED',
+      );
     }
     const invoiceId = params.merchant_trans_id ?? '';
     const invoice = await this.prisma.invoice.findFirst({
@@ -135,7 +139,11 @@ export class ClickService {
   // ---- Complete (action=1) ----
   private async complete(params: ClickParams): Promise<ClickResponse> {
     if (!this.verifyCompleteSign(params)) {
-      return this.fail(params, ClickError.SIGN_CHECK_FAILED, 'SIGN CHECK FAILED');
+      return this.fail(
+        params,
+        ClickError.SIGN_CHECK_FAILED,
+        'SIGN CHECK FAILED',
+      );
     }
     const clickTransId = params.click_trans_id ?? '';
     const tx = await this.findByClickId(clickTransId);
@@ -262,10 +270,7 @@ export class ClickService {
     return null;
   }
 
-  private ok(
-    p: ClickParams,
-    extra: Partial<ClickResponse>,
-  ): ClickResponse {
+  private ok(p: ClickParams, extra: Partial<ClickResponse>): ClickResponse {
     return {
       click_trans_id: p.click_trans_id ?? '',
       merchant_trans_id: p.merchant_trans_id ?? '',

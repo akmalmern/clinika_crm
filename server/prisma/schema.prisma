@@ -60,6 +60,7 @@ model Clinic {
   members       ClinicMember[]
   subscriptions Subscription[]
   invoices      Invoice[]
+  files         File[]
   // Eslatma: Transaction.clinicId — denormalizatsiya (tenant filtri/hisobot uchun),
   // clinics'ga FK YO'Q (faqat invoices'ga FK). Shu sababli bu yerda relation yo'q.
 
@@ -250,4 +251,33 @@ model Transaction {
   @@index([invoiceId])
   @@index([provider, status])
   @@map("transactions")
+}
+
+// ---- UNIVERSAL FAYL/HUJJAT JADVALI (Phase 4, spec 6) ----
+// Polimorfik: bitta jadval istalgan obyektga (xodim/bemor/klinika/tibbiy yozuv)
+// bog'lanadi -> har hujjat turi uchun alohida ustun YO'Q. Fayllarning O'ZI
+// MinIO/S3'da; bazada faqat metadata (storage_key, ...). DB-level polimorfik FK
+// yo'q (owner_type/owner_id) -> egasi o'chsa cleanup job tozalaydi (spec 8).
+model File {
+  id           String    @id @default(uuid()) @db.Uuid
+  clinicId     String    @map("clinic_id") @db.Uuid
+  ownerType    String    @map("owner_type") // USER | PATIENT | CLINIC | MEDICAL_RECORD (app-validated)
+  ownerId      String    @map("owner_id") @db.Uuid
+  category     String // PROFILE_PHOTO | PASSPORT | DIPLOMA | ... (app-validated)
+  storageKey   String    @map("storage_key") // MinIO/S3 dagi yo'l (object key)
+  originalName String    @map("original_name")
+  mimeType     String    @map("mime_type")
+  size         BigInt // bayt (BigInt — klinika umumiy hajmini xavfsiz yig'ish uchun)
+  uploadedBy   String?   @map("uploaded_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Fayllarni tez topish uchun composite index (spec 8 MUHIM QOIDA)
+  @@index([clinicId, ownerType, ownerId])
+  @@index([clinicId, createdAt])
+  @@index([ownerType, ownerId])
+  @@map("files")
 }

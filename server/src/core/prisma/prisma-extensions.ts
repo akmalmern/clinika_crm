@@ -22,6 +22,7 @@ export const TENANT_MODELS = new Set<string>([
   'Subscription',
   'Invoice',
   'Transaction',
+  'File',
 ]);
 
 /**
@@ -36,6 +37,7 @@ export const SOFT_DELETE_MODELS = new Set<string>([
   'SubscriptionPlan',
   'Subscription',
   'Invoice',
+  'File',
   // Transaction — moliyaviy ledger, soft-delete YO'Q (append + holat o'zgaradi).
 ]);
 

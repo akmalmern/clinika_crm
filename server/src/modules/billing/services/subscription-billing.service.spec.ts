@@ -62,8 +62,8 @@ describe('SubscriptionBillingService.runDailyBilling', () => {
           .fn()
           .mockResolvedValue({ id: 'inv2', status: 'UNPAID' }),
       },
-      $transaction: jest.fn(
-        async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+      $transaction: jest.fn(async (cb: (t: unknown) => Promise<unknown>) =>
+        cb(tx),
       ),
     };
 
@@ -146,8 +146,8 @@ describe('SubscriptionBillingService.runDailyBilling', () => {
           .mockResolvedValueOnce([]),
       },
       invoice: { findFirst: jest.fn() },
-      $transaction: jest.fn(
-        async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+      $transaction: jest.fn(async (cb: (t: unknown) => Promise<unknown>) =>
+        cb(tx),
       ),
     };
     const config = { getOrThrow: jest.fn().mockReturnValue({ graceDays: 3 }) };

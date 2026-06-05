@@ -161,7 +161,10 @@ export class PaymeService {
     }
 
     // Tranzaksiya muddati (12 soat) o'tib ketganmi?
-    if (Number.isFinite(time) && Date.now() - time > PAYME_TRANSACTION_TIMEOUT_MS) {
+    if (
+      Number.isFinite(time) &&
+      Date.now() - time > PAYME_TRANSACTION_TIMEOUT_MS
+    ) {
       return this.err(PaymeError.CANT_PERFORM, 'CANT_PERFORM');
     }
 
@@ -225,7 +228,11 @@ export class PaymeService {
   ): Promise<PaymeResponse> {
     const paycomId = this.asString(params.id);
     const tx = await this.findByPaycomId(paycomId);
-    if (!tx) return this.err(PaymeError.TRANSACTION_NOT_FOUND, 'TRANSACTION_NOT_FOUND');
+    if (!tx)
+      return this.err(
+        PaymeError.TRANSACTION_NOT_FOUND,
+        'TRANSACTION_NOT_FOUND',
+      );
 
     // Idempotent: allaqachon yakunlangan.
     if (tx.state === PaymeState.PERFORMED) {
@@ -292,7 +299,11 @@ export class PaymeService {
     const paycomId = this.asString(params.id);
     const reason = this.asNumber(params.reason);
     const tx = await this.findByPaycomId(paycomId);
-    if (!tx) return this.err(PaymeError.TRANSACTION_NOT_FOUND, 'TRANSACTION_NOT_FOUND');
+    if (!tx)
+      return this.err(
+        PaymeError.TRANSACTION_NOT_FOUND,
+        'TRANSACTION_NOT_FOUND',
+      );
 
     // Idempotent: allaqachon bekor qilingan.
     if (
@@ -346,7 +357,11 @@ export class PaymeService {
   ): Promise<PaymeResponse> {
     const paycomId = this.asString(params.id);
     const tx = await this.findByPaycomId(paycomId);
-    if (!tx) return this.err(PaymeError.TRANSACTION_NOT_FOUND, 'TRANSACTION_NOT_FOUND');
+    if (!tx)
+      return this.err(
+        PaymeError.TRANSACTION_NOT_FOUND,
+        'TRANSACTION_NOT_FOUND',
+      );
     return {
       result: {
         create_time: tx.createdAt.getTime(),

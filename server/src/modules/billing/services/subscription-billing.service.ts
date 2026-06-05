@@ -73,7 +73,8 @@ export class SubscriptionBillingService {
   ) {}
 
   async runDailyBilling(now: Date = new Date()): Promise<DailyBillingResult> {
-    const graceDays = this.config.getOrThrow<BillingConfig>('billing').graceDays;
+    const graceDays =
+      this.config.getOrThrow<BillingConfig>('billing').graceDays;
     let invoicesCreated = 0;
     let clinicsSuspended = 0;
 

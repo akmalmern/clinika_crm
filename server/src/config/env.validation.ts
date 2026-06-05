@@ -98,6 +98,22 @@ export class EnvVars {
   @IsOptional()
   MINIO_BUCKET?: string;
 
+  // 'true' | 'false' (string) — config.ts process.env'dan to'g'ridan-to'g'ri o'qiydi.
+  @IsString()
+  @IsOptional()
+  MINIO_USE_SSL?: string;
+
+  // --- Storage (fayl moduli, Phase 4) ---
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  STORAGE_SIGNED_URL_TTL?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  STORAGE_MAX_FILE_MB?: number;
+
   // --- Billing (obuna) ---
   @IsOptional()
   @Type(() => Number)

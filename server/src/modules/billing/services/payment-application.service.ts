@@ -89,8 +89,12 @@ export class PaymentApplicationService {
             transactionId: existing.id,
             invoiceStatus: invoice?.status ?? InvoiceStatus.PAID,
             fullyPaid: invoice?.status === InvoiceStatus.PAID,
-            paidAmount: (invoice?.paidAmount ?? new Prisma.Decimal(0)).toString(),
-            debtAmount: (invoice?.debtAmount ?? new Prisma.Decimal(0)).toString(),
+            paidAmount: (
+              invoice?.paidAmount ?? new Prisma.Decimal(0)
+            ).toString(),
+            debtAmount: (
+              invoice?.debtAmount ?? new Prisma.Decimal(0)
+            ).toString(),
             alreadyApplied: true,
           };
         }
@@ -131,7 +135,9 @@ export class PaymentApplicationService {
       });
       if (!invoice) throw new NotFoundException('Hisob-faktura topilmadi');
       if (invoice.status === InvoiceStatus.CANCELLED) {
-        throw new ConflictException('Bekor qilingan hisob-fakturaga to`lov yo`q');
+        throw new ConflictException(
+          'Bekor qilingan hisob-fakturaga to`lov yo`q',
+        );
       }
 
       const newPaid = invoice.paidAmount.plus(params.amount);

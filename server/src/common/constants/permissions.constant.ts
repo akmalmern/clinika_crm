@@ -25,6 +25,9 @@ export const Permission = {
   PATIENT_READ: 'patient:read',
   PATIENT_MANAGE: 'patient:manage',
   AUDIT_READ: 'audit:read',
+  // Fayllar (Phase 4)
+  FILE_READ: 'file:read', // ro'yxat + signed URL (ko'rish/yuklab olish)
+  FILE_MANAGE: 'file:manage', // yuklash + o'chirish
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -46,10 +49,22 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     Permission.PATIENT_MANAGE,
     Permission.AUDIT_READ,
     Permission.BILLING_READ,
+    Permission.FILE_READ,
+    Permission.FILE_MANAGE,
   ],
-  [Role.DOCTOR]: [Permission.PATIENT_READ, Permission.PATIENT_MANAGE],
-  [Role.RECEPTIONIST]: [Permission.PATIENT_READ, Permission.PATIENT_MANAGE],
-  [Role.NURSE]: [Permission.PATIENT_READ],
+  [Role.DOCTOR]: [
+    Permission.PATIENT_READ,
+    Permission.PATIENT_MANAGE,
+    Permission.FILE_READ,
+    Permission.FILE_MANAGE,
+  ],
+  [Role.RECEPTIONIST]: [
+    Permission.PATIENT_READ,
+    Permission.PATIENT_MANAGE,
+    Permission.FILE_READ,
+    Permission.FILE_MANAGE,
+  ],
+  [Role.NURSE]: [Permission.PATIENT_READ, Permission.FILE_READ],
   [Role.CASHIER]: [Permission.PATIENT_READ],
   [Role.PATIENT]: [],
 };

@@ -8,6 +8,8 @@ import { validateEnv } from './config/env.validation';
 
 import { PrismaModule } from './core/prisma/prisma.module';
 import { RedisModule } from './core/redis/redis.module';
+import { StorageModule } from './core/storage/storage.module';
+import { QueueModule } from './core/queue/queue.module';
 
 import { AuditModule } from './modules/audit/audit.module';
 import { AuditInterceptor } from './modules/audit/audit.interceptor';
@@ -18,6 +20,8 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
 import { MembersModule } from './modules/members/members.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { BillingSchedulerModule } from './modules/billing/billing-scheduler.module';
+import { FilesModule } from './modules/files/files.module';
+import { FilesCleanupModule } from './modules/files/files-cleanup.module';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
@@ -29,12 +33,14 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
 import { HealthController } from './health/health.controller';
 
 /**
- * Billing cron (BullMQ) test muhitida YUKLANMAYDI — e2e testlar Redis/BullMQ
- * ulanishini talab qilmasin (DI grafigi mock infra bilan ko'tariladi).
- * Production/dev'da esa kunlik cron ishlaydi.
+ * BullMQ-ga bog'liq modullar (QueueModule + cron/cleanup) test muhitida
+ * YUKLANMAYDI — e2e testlar Redis/BullMQ ulanishini talab qilmasin (DI grafigi
+ * mock infra bilan ko'tariladi). Production/dev'da cron + cleanup ishlaydi.
  */
 const schedulerModules =
-  process.env.NODE_ENV === 'test' ? [] : [BillingSchedulerModule];
+  process.env.NODE_ENV === 'test'
+    ? []
+    : [QueueModule, BillingSchedulerModule, FilesCleanupModule];
 
 @Module({
   imports: [
@@ -58,6 +64,7 @@ const schedulerModules =
     // Core infratuzilma
     PrismaModule,
     RedisModule,
+    StorageModule,
     AuditModule,
 
     // Funksional modullar
@@ -67,6 +74,7 @@ const schedulerModules =
     SubscriptionsModule,
     MembersModule,
     BillingModule,
+    FilesModule,
     ...schedulerModules,
   ],
   controllers: [HealthController],

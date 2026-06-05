@@ -28,7 +28,7 @@ export class ClickController {
     @Body() body: ClickParams,
     @Res() res: Response,
   ): Promise<void> {
-    res.json(await this.click.handle(body));
+    res.status(200).json(await this.click.handle(body));
   }
 
   @Post('complete')
@@ -39,6 +39,6 @@ export class ClickController {
     @Body() body: ClickParams,
     @Res() res: Response,
   ): Promise<void> {
-    res.json(await this.click.handle(body));
+    res.status(200).json(await this.click.handle(body));
   }
 }
