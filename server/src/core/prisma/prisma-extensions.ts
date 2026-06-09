@@ -23,6 +23,18 @@ export const TENANT_MODELS = new Set<string>([
   'Invoice',
   'Transaction',
   'File',
+  'Patient',
+  'ServiceCategory',
+  'Service',
+  'ServicePriceHistory',
+  'DoctorSchedule',
+  'Appointment',
+  'AppointmentStatusHistory',
+  'PatientInvoice',
+  'PatientPayment',
+  'MedicalRecord',
+  'PrescriptionItem',
+  'TelegramLink',
 ]);
 
 /**
@@ -38,7 +50,17 @@ export const SOFT_DELETE_MODELS = new Set<string>([
   'Subscription',
   'Invoice',
   'File',
+  'Patient',
+  'ServiceCategory',
+  'Service',
+  'DoctorSchedule',
+  'Appointment',
+  'PatientInvoice',
+  'MedicalRecord',
+  'PrescriptionItem',
+  'TelegramLink',
   // Transaction — moliyaviy ledger, soft-delete YO'Q (append + holat o'zgaradi).
+  // ServicePriceHistory, AppointmentStatusHistory, PatientPayment — append-only.
 ]);
 
 const READ_OPS = new Set<string>([

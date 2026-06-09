@@ -57,10 +57,13 @@ model Clinic {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  members       ClinicMember[]
-  subscriptions Subscription[]
-  invoices      Invoice[]
-  files         File[]
+  members           ClinicMember[]
+  subscriptions     Subscription[]
+  invoices          Invoice[]
+  files             File[]
+  patients          Patient[]
+  serviceCategories ServiceCategory[]
+  services          Service[]
   // Eslatma: Transaction.clinicId — denormalizatsiya (tenant filtri/hisobot uchun),
   // clinics'ga FK YO'Q (faqat invoices'ga FK). Shu sababli bu yerda relation yo'q.
 
@@ -250,6 +253,8 @@ model Transaction {
   @@index([clinicId, createdAt])
   @@index([invoiceId])
   @@index([provider, status])
+  // Hisobot (Phase 7B): platforma daromadi PAID tranzaksiyalar performed_at bo'yicha.
+  @@index([status, performedAt])
   @@map("transactions")
 }
 
@@ -280,4 +285,303 @@ model File {
   @@index([clinicId, createdAt])
   @@index([ownerType, ownerId])
   @@map("files")
+}
+
+// ---- BEMORLAR (Phase 5A, spec 7.4) ----
+// Tenant-scoped (clinic_id). Rasm/hujjatlar files moduli orqali (owner_type=PATIENT).
+// avatar_url -> profil rasm fayl id (files.id), signed URL bilan ko'rsatiladi.
+model Patient {
+  id        String    @id @default(uuid()) @db.Uuid
+  clinicId  String    @map("clinic_id") @db.Uuid
+  fullName  String    @map("full_name")
+  birthDate DateTime? @map("birth_date") @db.Date
+  gender    String? // MALE | FEMALE | OTHER (app-validated)
+  phone     String?
+  address   String?
+  bloodType String?   @map("blood_type") // A+, O-, ... (app-validated)
+  allergies String?
+  avatarUrl String?   @map("avatar_url") // PROFILE rasm fayl id (files.id)
+  notes     String?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  clinic          Clinic           @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  appointments    Appointment[]
+  patientInvoices PatientInvoice[]
+  medicalRecords  MedicalRecord[]
+
+  @@index([clinicId, createdAt])
+  @@index([clinicId, fullName])
+  @@index([clinicId, phone])
+  @@map("patients")
+}
+
+// ---- XIZMAT KATEGORIYALARI (Phase 5A, spec 7.8) ----
+model ServiceCategory {
+  id          String    @id @default(uuid()) @db.Uuid
+  clinicId    String    @map("clinic_id") @db.Uuid
+  name        String
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  clinic   Clinic    @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  services Service[]
+
+  // Partial unique (clinic_id, name) WHERE deleted_at IS NULL -> migration SQL'da
+  @@index([clinicId])
+  @@map("service_categories")
+}
+
+// ---- XIZMATLAR (Phase 5A, spec 7.8) ----
+// Pul Decimal (Float EMAS). Narx o'zgarsa service_price_history'ga yoziladi.
+// Soft-delete -> eski qabullardagi narx tarixiga ta'sir qilmaydi (spec 7.8).
+model Service {
+  id         String    @id @default(uuid()) @db.Uuid
+  clinicId   String    @map("clinic_id") @db.Uuid
+  categoryId String?   @map("category_id") @db.Uuid
+  name       String
+  price      Decimal   @db.Decimal(14, 2)
+  currency   String    @default("UZS")
+  duration   Int? // daqiqa (qabul davomiyligi)
+  isActive   Boolean   @default(true) @map("is_active")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  clinic       Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  category     ServiceCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  priceHistory ServicePriceHistory[]
+  appointments Appointment[]
+
+  @@index([clinicId, isActive])
+  @@index([clinicId, categoryId])
+  @@map("services")
+}
+
+// ---- NARX TARIXI (Phase 5A, spec 7.8 — append-only) ----
+// Har narx o'zgarishida bitta yozuv: kim (changed_by), qachon, eski -> yangi.
+// Soft-delete YO'Q (tarix o'chirilmaydi).
+model ServicePriceHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  serviceId String   @map("service_id") @db.Uuid
+  oldPrice  Decimal  @map("old_price") @db.Decimal(14, 2)
+  newPrice  Decimal  @map("new_price") @db.Decimal(14, 2)
+  changedBy String?  @map("changed_by") @db.Uuid
+  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([clinicId, serviceId])
+  @@index([serviceId, changedAt])
+  @@map("service_price_history")
+}
+
+// =============================================================================
+// Phase 5B — Qabul (Appointment) va Kassa (bemor to'lovlari)
+// =============================================================================
+// Eslatma: doctor_id va clinic_id — UUID ustunlar (FK migration SQL'da: doctor_id ->
+// users, clinic_id -> clinics). Prisma relation faqat Phase 5B grafida (Patient/
+// Service/Appointment/PatientInvoice/PatientPayment) — Clinic/User modellari
+// shishirilmasin (Transaction'dagi kabi yondashuv).
+
+// ---- SHIFOKOR ISH JADVALI (spec 7.6 / 8) ----
+// weekday: 0=Yakshanba .. 6=Shanba (Asia/Tashkent, UTC+5). start_time/end_time —
+// "HH:MM" (mahalliy vaqt). Bo'sh slotlar shundan hisoblanadi.
+model DoctorSchedule {
+  id          String    @id @default(uuid()) @db.Uuid
+  clinicId    String    @map("clinic_id") @db.Uuid
+  doctorId    String    @map("doctor_id") @db.Uuid
+  weekday     Int
+  startTime   String    @map("start_time") // "HH:MM" (mahalliy)
+  endTime     String    @map("end_time") // "HH:MM" (mahalliy)
+  slotMinutes Int       @map("slot_minutes")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([clinicId, doctorId, weekday])
+  @@map("doctor_schedules")
+}
+
+// ---- QABULLAR (spec 7.6) ----
+// Double-booking: bitta doctor + vaqt oralig'i takrorlanmasin. Migration SQL'da
+// EXCLUDE (btree_gist) constraint + servisda advisory-lock (parallel xavfsizlik).
+// status: PENDING | ARRIVED | IN_PROGRESS | COMPLETED | CANCELLED | NO_SHOW.
+model Appointment {
+  id          String    @id @default(uuid()) @db.Uuid
+  clinicId    String    @map("clinic_id") @db.Uuid
+  patientId   String    @map("patient_id") @db.Uuid
+  doctorId    String    @map("doctor_id") @db.Uuid
+  serviceId   String?   @map("service_id") @db.Uuid
+  scheduledAt DateTime  @map("scheduled_at") @db.Timestamptz(6)
+  endsAt      DateTime  @map("ends_at") @db.Timestamptz(6)
+  status      String    @default("PENDING")
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  patient         Patient                    @relation(fields: [patientId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  service         Service?                   @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  statusHistory   AppointmentStatusHistory[]
+  patientInvoices PatientInvoice[]
+  medicalRecords  MedicalRecord[]
+
+  @@index([clinicId, doctorId, scheduledAt])
+  @@index([clinicId, patientId])
+  @@index([clinicId, scheduledAt])
+  // Hisobot (Phase 7B): status kesimida (no-show foizi, shifokor yuklamasi).
+  @@index([clinicId, status, scheduledAt])
+  @@map("appointments")
+}
+
+// ---- QABUL HOLATI TARIXI (spec 7.6 / 11.5 — ML uchun, append-only) ----
+model AppointmentStatusHistory {
+  id            String   @id @default(uuid()) @db.Uuid
+  clinicId      String   @map("clinic_id") @db.Uuid
+  appointmentId String   @map("appointment_id") @db.Uuid
+  oldStatus     String?  @map("old_status")
+  newStatus     String   @map("new_status")
+  changedBy     String?  @map("changed_by") @db.Uuid
+  changedAt     DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([appointmentId, changedAt])
+  @@map("appointment_status_history")
+}
+
+// ---- BEMOR HISOB-FAKTURASI (klinika kassasi, spec 7.9) ----
+// Abonent to'lovidan (invoices/transactions) ALOHIDA. status: UNPAID | PARTIAL |
+// PAID | CANCELLED. debt_amount = total - paid (denormalized).
+model PatientInvoice {
+  id            String    @id @default(uuid()) @db.Uuid
+  clinicId      String    @map("clinic_id") @db.Uuid
+  patientId     String    @map("patient_id") @db.Uuid
+  appointmentId String?   @map("appointment_id") @db.Uuid
+  totalAmount   Decimal   @map("total_amount") @db.Decimal(14, 2)
+  paidAmount    Decimal   @default(0) @map("paid_amount") @db.Decimal(14, 2)
+  debtAmount    Decimal   @map("debt_amount") @db.Decimal(14, 2)
+  currency      String    @default("UZS")
+  status        String    @default("UNPAID")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  patient     Patient          @relation(fields: [patientId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  appointment Appointment?     @relation(fields: [appointmentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  payments    PatientPayment[]
+
+  @@index([clinicId, status])
+  @@index([clinicId, patientId])
+  @@map("invoices_patient")
+}
+
+// ---- BEMOR TO'LOVLARI (ledger — soft-delete YO'Q, bo'lib-bo'lib to'lash) ----
+// method: CASH | CARD | PAYME | CLICK. cashier_id — kim qabul qilgani.
+model PatientPayment {
+  id               String   @id @default(uuid()) @db.Uuid
+  clinicId         String   @map("clinic_id") @db.Uuid
+  patientInvoiceId String   @map("patient_invoice_id") @db.Uuid
+  patientId        String   @map("patient_id") @db.Uuid
+  amount           Decimal  @db.Decimal(14, 2)
+  method           String
+  status           String   @default("COMPLETED")
+  paidAt           DateTime @default(now()) @map("paid_at") @db.Timestamptz(6)
+  cashierId        String?  @map("cashier_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  invoice PatientInvoice @relation(fields: [patientInvoiceId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([clinicId, createdAt])
+  // Hisobot (Phase 7B): daromad paid_at bo'yicha guruhlanadi — alohida indeks.
+  @@index([clinicId, paidAt])
+  @@index([patientInvoiceId])
+  @@map("patient_payments")
+}
+
+// =============================================================================
+// Phase 6 — Tibbiy yozuvlar (EMR) + retsept
+// =============================================================================
+// MAXFIY ma'lumot (spec 10): tenant izolyatsiyasi qat'iy, faqat DOCTOR/NURSE/
+// CLINIC_ADMIN kiradi, har o'qish audit log'ga yoziladi. doctor_id va clinic_id —
+// UUID ustun (FK migration SQL'da). Skanlangan fayllar -> files moduli
+// (owner_type=MEDICAL_RECORD). prescription_items — normallashtirilgan retsept.
+
+model MedicalRecord {
+  id            String    @id @default(uuid()) @db.Uuid
+  clinicId      String    @map("clinic_id") @db.Uuid
+  patientId     String    @map("patient_id") @db.Uuid
+  appointmentId String?   @map("appointment_id") @db.Uuid
+  doctorId      String    @map("doctor_id") @db.Uuid
+  complaints    String? // shikoyatlar
+  diagnosis     String? // tashxis
+  icdCode       String?   @map("icd_code") // ICD-10 kod
+  treatment     String? // davolash
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  patient      Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  appointment  Appointment?      @relation(fields: [appointmentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  prescriptions PrescriptionItem[]
+
+  @@index([clinicId, patientId, createdAt])
+  @@index([clinicId, createdAt])
+  @@index([appointmentId])
+  @@map("medical_records")
+}
+
+// ---- RETSEPT QATORLARI (normallashtirilgan — bir ko'rikда ko'p dori) ----
+model PrescriptionItem {
+  id              String    @id @default(uuid()) @db.Uuid
+  clinicId        String    @map("clinic_id") @db.Uuid
+  medicalRecordId String    @map("medical_record_id") @db.Uuid
+  drugName        String    @map("drug_name")
+  dosage          String? // masalan "500 mg"
+  frequency       String? // masalan "kuniga 2 marta"
+  duration        String? // masalan "7 kun"
+  instructions    String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([clinicId, medicalRecordId])
+  @@map("prescription_items")
+}
+
+// =============================================================================
+// Phase 7A — Telegram akkaunt bog'lash (markaziy bot, multi-tenant)
+// =============================================================================
+// Bir martalik link_token -> /start <token> -> telegram_chat_id bog'lanadi.
+// FAQAT status=LINKED chat'ga xabar yuboriladi (spec 12). clinic_id — UUID ustun
+// (FK migration SQL'da). owner_type: PATIENT | USER (shifokor/xodim).
+model TelegramLink {
+  id             String    @id @default(uuid()) @db.Uuid
+  clinicId       String    @map("clinic_id") @db.Uuid
+  ownerType      String    @map("owner_type") // PATIENT | USER
+  ownerId        String    @map("owner_id") @db.Uuid
+  telegramChatId String?   @map("telegram_chat_id") // bog'langach to'ldiriladi
+  linkToken      String    @map("link_token") // bir martalik
+  status         String    @default("PENDING") // PENDING | LINKED
+  linkedAt       DateTime? @map("linked_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  // Partial unique: link_token; (clinic_id, owner_type, owner_id) WHERE LINKED -> migration SQL
+  @@index([clinicId, ownerType, ownerId])
+  @@index([telegramChatId])
+  @@map("telegram_links")
 }

@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
@@ -11,8 +13,19 @@ import { buildPaginationMeta } from '../../common/dto/pagination-query.dto';
 import { Paginated } from '../../common/interfaces/api-response.interface';
 import { generatePassword } from '../../common/utils/password.util';
 import { AuditService } from '../audit/audit.service';
+import {
+  FileResponse,
+  FilesService,
+  UploadedMulterFile,
+} from '../files/files.service';
+import { FilesCleanupService } from '../files/cleanup/files-cleanup.service';
+import {
+  avatarCategoryFor,
+  FileOwnerType,
+} from '../files/constants/file.constant';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { ListMembersQueryDto } from './dto/list-members-query.dto';
+import { UpdateMemberDto } from './dto/update-member.dto';
 
 export interface MemberResponse {
   id: string;
@@ -24,6 +37,7 @@ export interface MemberResponse {
   position: string | null;
   specialization: string | null;
   isActive: boolean;
+  avatarFileId: string | null;
   createdAt: Date;
 }
 
@@ -46,6 +60,9 @@ export class MembersService {
   constructor(
     @InjectPrisma() private readonly prisma: ExtendedPrismaClient,
     private readonly auditService: AuditService,
+    private readonly filesService: FilesService,
+    // BullMQ cleanup — prod'da bor; test'da yo'q (inline fallback ishlatiladi).
+    @Optional() private readonly cleanup?: FilesCleanupService,
   ) {}
 
   async create(
@@ -132,6 +149,160 @@ export class MembersService {
     };
   }
 
+  async findOne(clinicId: string, memberId: string): Promise<MemberResponse> {
+    return toMemberResponse(await this.getOrThrow(clinicId, memberId));
+  }
+
+  async update(
+    clinicId: string,
+    memberId: string,
+    dto: UpdateMemberDto,
+  ): Promise<MemberResponse> {
+    const member = await this.getOrThrow(clinicId, memberId);
+
+    const userData: Prisma.UserUpdateInput = {};
+    if (dto.fullName !== undefined) userData.fullName = dto.fullName;
+    if (dto.phone !== undefined) userData.phone = dto.phone;
+
+    const memberData: Prisma.ClinicMemberUpdateInput = {};
+    if (dto.role !== undefined) memberData.role = dto.role;
+    if (dto.position !== undefined) memberData.position = dto.position;
+    if (dto.specialization !== undefined)
+      memberData.specialization = dto.specialization;
+    if (dto.isActive !== undefined) memberData.isActive = dto.isActive;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(userData).length > 0) {
+        await tx.user.update({ where: { id: member.userId }, data: userData });
+      }
+      return tx.clinicMember.update({
+        where: { id: memberId },
+        data: memberData,
+        include: { user: true },
+      });
+    });
+
+    await this.auditService.log({
+      action: 'MEMBER_UPDATE',
+      entity: 'ClinicMember',
+      entityId: memberId,
+      clinicId,
+    });
+    return toMemberResponse(updated);
+  }
+
+  /** A'zolikni soft-delete + shu klinikadagi fayllarini cleanup (boshqa klinika emas). */
+  async remove(clinicId: string, memberId: string): Promise<{ id: string }> {
+    const member = await this.getOrThrow(clinicId, memberId);
+    await this.prisma.clinicMember.update({
+      where: { id: memberId },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+
+    await this.triggerFileCleanup(member.userId, clinicId);
+
+    await this.auditService.log({
+      action: 'MEMBER_DELETE',
+      entity: 'ClinicMember',
+      entityId: memberId,
+      clinicId,
+    });
+    return { id: memberId };
+  }
+
+  // ---- Fayllar (Phase 4 files moduli orqali) ----
+
+  async uploadAvatar(
+    clinicId: string,
+    memberId: string,
+    uploaderId: string,
+    file: UploadedMulterFile,
+  ): Promise<FileResponse> {
+    const member = await this.getOrThrow(clinicId, memberId);
+    return this.filesService.upload({
+      ownerType: FileOwnerType.USER,
+      ownerId: member.userId,
+      category: avatarCategoryFor(FileOwnerType.USER),
+      clinicId,
+      uploadedBy: uploaderId,
+      file,
+    });
+  }
+
+  async uploadDocument(
+    clinicId: string,
+    memberId: string,
+    uploaderId: string,
+    category: string,
+    file: UploadedMulterFile,
+  ): Promise<FileResponse> {
+    const member = await this.getOrThrow(clinicId, memberId);
+    return this.filesService.upload({
+      ownerType: FileOwnerType.USER,
+      ownerId: member.userId,
+      category,
+      clinicId,
+      uploadedBy: uploaderId,
+      file,
+    });
+  }
+
+  async listDocuments(
+    clinicId: string,
+    memberId: string,
+  ): Promise<FileResponse[]> {
+    const member = await this.getOrThrow(clinicId, memberId);
+    return this.filesService.listForOwner(
+      clinicId,
+      FileOwnerType.USER,
+      member.userId,
+    );
+  }
+
+  async deleteDocument(
+    clinicId: string,
+    memberId: string,
+    fileId: string,
+    userId: string,
+  ): Promise<{ id: string }> {
+    await this.getOrThrow(clinicId, memberId);
+    return this.filesService.remove(fileId, clinicId, userId);
+  }
+
+  // ---- private ----
+
+  private async getOrThrow(
+    clinicId: string,
+    memberId: string,
+  ): Promise<MemberWithUser> {
+    const member = await this.prisma.clinicMember.findFirst({
+      where: { id: memberId, clinicId, deletedAt: null },
+      include: { user: true },
+    });
+    if (!member) throw new NotFoundException('Xodim topilmadi');
+    return member;
+  }
+
+  /** Fayl cleanup: prod'da navbatga, test/queue'siz holatda inline. */
+  private async triggerFileCleanup(
+    userId: string,
+    clinicId: string,
+  ): Promise<void> {
+    if (this.cleanup) {
+      await this.cleanup.enqueueOwnerCleanup(
+        FileOwnerType.USER,
+        userId,
+        clinicId,
+      );
+    } else {
+      await this.filesService.cleanupOwner(
+        FileOwnerType.USER,
+        userId,
+        clinicId,
+      );
+    }
+  }
+
   private async attachExisting(
     clinicId: string,
     dto: CreateMemberDto,
@@ -183,6 +354,7 @@ export function toMemberResponse(m: MemberWithUser): MemberResponse {
     position: m.position,
     specialization: m.specialization,
     isActive: m.isActive,
+    avatarFileId: m.user.avatarUrl,
     createdAt: m.createdAt,
   };
 }

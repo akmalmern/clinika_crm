@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   PayloadTooLargeException,
@@ -130,18 +131,35 @@ export class FilesService {
       },
     });
 
-    // Profil rasmi bo'lsa — egasining avatar_url'ini yangilaymiz
-    if (
-      AVATAR_CATEGORIES.includes(input.category) &&
-      input.ownerType === FileOwnerType.USER
-    ) {
-      await this.prisma.user.update({
-        where: { id: input.ownerId },
-        data: { avatarUrl: created.id },
-      });
+    // Profil rasmi bo'lsa — egasining avatar_url'ini yangilaymiz (fayl id saqlanadi)
+    if (AVATAR_CATEGORIES.includes(input.category)) {
+      if (input.ownerType === FileOwnerType.USER) {
+        await this.prisma.user.update({
+          where: { id: input.ownerId },
+          data: { avatarUrl: created.id },
+        });
+      } else if (input.ownerType === FileOwnerType.PATIENT) {
+        await this.prisma.patient.update({
+          where: { id: input.ownerId },
+          data: { avatarUrl: created.id },
+        });
+      }
     }
 
     return toFileResponse(created);
+  }
+
+  /** Owner bo'yicha barcha (soft-delete qilinmagan) fayllar — staff/patient hujjatlari. */
+  async listForOwner(
+    clinicId: string,
+    ownerType: string,
+    ownerId: string,
+  ): Promise<FileResponse[]> {
+    const rows = await this.prisma.file.findMany({
+      where: { clinicId, ownerType, ownerId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map(toFileResponse);
   }
 
   // ---- List (owner bo'yicha) ----
@@ -178,12 +196,18 @@ export class FilesService {
     id: string,
     clinicId: string,
     userId: string,
+    // MAXFIYLIK (spec 10): MEDICAL_RECORD fayllari faqat EMR ruxsatli rolga.
+    // Universal /files endpoint EMR_READ'siz rolga (registrator) bermaydi.
+    canAccessMedical = true,
   ): Promise<SignedUrlResult> {
     // Tenant: Prisma extension clinic_id qo'yadi; qo'shimcha aniq beramiz.
     const file = await this.prisma.file.findFirst({
       where: { id, clinicId, deletedAt: null },
     });
     if (!file) throw new NotFoundException('Fayl topilmadi');
+    if (file.ownerType === FileOwnerType.MEDICAL_RECORD && !canAccessMedical) {
+      throw new ForbiddenException('Tibbiy faylga kirish ruxsati yo`q');
+    }
 
     const url = await this.storage.getSignedDownloadUrl(
       file.storageKey,
@@ -239,10 +263,14 @@ export class FilesService {
    * Cleanup (BullMQ job): egasi (user/patient/medical_record) o'chganda uning
    * fayllarini storage'dan tozalaydi + DB'da soft-delete qiladi. Soft-delete
    * qilingan fayllarni ham qamrab oladi (bypassSoftDelete). Idempotent.
+   *
+   * `clinicId` berilsa — faqat o'sha klinika fayllari (USER bir nechta klinikada
+   * bo'lishi mumkin: bitta klinikadan chiqarilganda boshqa klinika fayllari o'chmasin).
    */
   async cleanupOwner(
     ownerType: string,
     ownerId: string,
+    clinicId?: string,
   ): Promise<{ purged: number }> {
     // Job kontekstida store yo'q -> tenant/soft-delete filtrlarini chetlab o'tamiz
     return runWithTenant(
@@ -254,7 +282,7 @@ export class FilesService {
       },
       async () => {
         const files = await this.prisma.file.findMany({
-          where: { ownerType, ownerId },
+          where: { ownerType, ownerId, ...(clinicId ? { clinicId } : {}) },
         });
         let purged = 0;
         for (const f of files) {
@@ -272,6 +300,7 @@ export class FilesService {
             action: 'FILE_CLEANUP',
             entity: 'File',
             actorType: ActorType.SYSTEM,
+            clinicId,
             metadata: { ownerType, ownerId, purged },
           });
         }

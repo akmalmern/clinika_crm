@@ -9,4 +9,6 @@ export const FilesCleanupJob = {
 export interface OwnerCleanupPayload {
   ownerType: string;
   ownerId: string;
+  /** Berilsa — faqat shu klinika fayllari tozalanadi (USER multi-klinika holati). */
+  clinicId?: string;
 }

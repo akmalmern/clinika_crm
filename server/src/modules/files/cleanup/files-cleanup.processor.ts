@@ -20,8 +20,12 @@ export class FilesCleanupProcessor extends WorkerHost {
   }
 
   async process(job: Job<OwnerCleanupPayload>): Promise<{ purged: number }> {
-    const { ownerType, ownerId } = job.data;
-    const result = await this.filesService.cleanupOwner(ownerType, ownerId);
+    const { ownerType, ownerId, clinicId } = job.data;
+    const result = await this.filesService.cleanupOwner(
+      ownerType,
+      ownerId,
+      clinicId,
+    );
     this.logger.log(
       `Cleanup ${ownerType}/${ownerId}: ${result.purged} fayl tozalandi`,
     );

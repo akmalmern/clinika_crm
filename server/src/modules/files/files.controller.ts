@@ -23,9 +23,13 @@ import {
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ActorType } from '../../common/constants/roles.constant';
-import { Permission } from '../../common/constants/permissions.constant';
+import {
+  Permission,
+  roleHasPermissions,
+} from '../../common/constants/permissions.constant';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { FilesService, UploadedMulterFile } from './files.service';
+import { FileOwnerType } from './constants/file.constant';
 import { UploadFileDto } from './dto/upload-file.dto';
 import { ListFilesQueryDto } from './dto/list-files-query.dto';
 
@@ -90,6 +94,13 @@ export class FilesController {
     @Query() query: ListFilesQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    // MAXFIYLIK: tibbiy yozuv fayllarini faqat EMR ruxsatli rol ko'radi.
+    if (
+      query.ownerType === FileOwnerType.MEDICAL_RECORD &&
+      !this.canAccessMedical(user)
+    ) {
+      throw new ForbiddenException('Tibbiy fayllarga kirish ruxsati yo`q');
+    }
     return this.filesService.list(query, this.requireClinic(user));
   }
 
@@ -106,6 +117,7 @@ export class FilesController {
       id,
       this.requireClinic(user),
       user.userId,
+      this.canAccessMedical(user),
     );
   }
 
@@ -128,5 +140,10 @@ export class FilesController {
       );
     }
     return user.clinicId;
+  }
+
+  /** EMR_READ ruxsati bormi (tibbiy fayllarga kirish uchun). */
+  private canAccessMedical(user: AuthenticatedUser): boolean {
+    return roleHasPermissions(user.role, [Permission.EMR_READ]);
   }
 }

@@ -18,10 +18,15 @@ export class FilesCleanupService {
     @InjectQueue(FILES_CLEANUP_QUEUE) private readonly queue: Queue,
   ) {}
 
-  async enqueueOwnerCleanup(ownerType: string, ownerId: string): Promise<void> {
-    const payload: OwnerCleanupPayload = { ownerType, ownerId };
+  async enqueueOwnerCleanup(
+    ownerType: string,
+    ownerId: string,
+    clinicId?: string,
+  ): Promise<void> {
+    const payload: OwnerCleanupPayload = { ownerType, ownerId, clinicId };
     await this.queue.add(FilesCleanupJob.OWNER_DELETED, payload, {
-      jobId: `${FilesCleanupJob.OWNER_DELETED}:${ownerType}:${ownerId}`,
+      // BullMQ jobId ichida ':' BO'LMASLIGI kerak -> '-' bilan ajratamiz.
+      jobId: `${FilesCleanupJob.OWNER_DELETED}-${ownerType}-${ownerId}-${clinicId ?? 'all'}`,
       removeOnComplete: true,
       removeOnFail: 50,
       attempts: 3,

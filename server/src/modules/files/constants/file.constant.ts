@@ -41,6 +41,13 @@ export const AVATAR_CATEGORIES: string[] = [
   FileCategory.PATIENT_PHOTO,
 ];
 
+/** Owner turига mos profil rasm toifasi (staff -> PROFILE_PHOTO, bemor -> PATIENT_PHOTO). */
+export function avatarCategoryFor(ownerType: string): string {
+  return ownerType === FileOwnerType.PATIENT
+    ? FileCategory.PATIENT_PHOTO
+    : FileCategory.PROFILE_PHOTO;
+}
+
 /**
  * Ruxsat etilgan MIME turlari (spec 6.4 / 9): faqat jpg/png/pdf/docx.
  * Qiymat — kengaytmalar (xato xabarida ko'rsatish uchun).
@@ -55,6 +62,9 @@ export const ALLOWED_MIME_TYPES: Record<string, string> = {
 };
 
 export const ALLOWED_MIME_LIST: string[] = Object.keys(ALLOWED_MIME_TYPES);
+
+/** Multer xotira himoya chegarasi (aniq limit servisda — config/tarif). */
+export const MULTER_HARD_CAP = 100 * 1024 * 1024;
 
 export function isAllowedMime(mime: string): boolean {
   return Object.prototype.hasOwnProperty.call(ALLOWED_MIME_TYPES, mime);

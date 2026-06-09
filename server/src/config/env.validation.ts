@@ -114,6 +114,65 @@ export class EnvVars {
   @IsNumber()
   STORAGE_MAX_FILE_MB?: number;
 
+  // --- Scheduling (qabul, Phase 5B) ---
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  CLINIC_TZ_OFFSET_MINUTES?: number;
+
+  // --- Reports (Phase 7B) — og'ir agregat kesh muddati (sekund). ---
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  REPORTS_CACHE_TTL_SEC?: number;
+
+  // --- Notification / SMS (Phase 7A). Kalitlar faqat .env'da. ---
+  @IsString()
+  @IsOptional()
+  SMS_PROVIDER?: string; // log | eskiz
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  NOTIFY_REMINDER_LEAD_MIN?: number;
+
+  @IsString()
+  @IsOptional()
+  ESKIZ_EMAIL?: string;
+
+  @IsString()
+  @IsOptional()
+  ESKIZ_PASSWORD?: string;
+
+  @IsString()
+  @IsOptional()
+  ESKIZ_FROM?: string;
+
+  @IsString()
+  @IsOptional()
+  ESKIZ_BASE_URL?: string;
+
+  // --- Telegram bot (Phase 7A). Token/secret faqat .env'da. ---
+  @IsString()
+  @IsOptional()
+  TELEGRAM_BOT_TOKEN?: string;
+
+  @IsString()
+  @IsOptional()
+  TELEGRAM_BOT_USERNAME?: string;
+
+  @IsString()
+  @IsOptional()
+  TELEGRAM_WEBHOOK_SECRET?: string;
+
+  @IsString()
+  @IsOptional()
+  TELEGRAM_WEBHOOK_DOMAIN?: string;
+
+  @IsString()
+  @IsOptional()
+  APP_PUBLIC_URL?: string;
+
   // --- Billing (obuna) ---
   @IsOptional()
   @Type(() => Number)

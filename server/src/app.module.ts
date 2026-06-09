@@ -22,6 +22,15 @@ import { BillingModule } from './modules/billing/billing.module';
 import { BillingSchedulerModule } from './modules/billing/billing-scheduler.module';
 import { FilesModule } from './modules/files/files.module';
 import { FilesCleanupModule } from './modules/files/files-cleanup.module';
+import { PatientsModule } from './modules/patients/patients.module';
+import { ServicesModule } from './modules/services/services.module';
+import { CashierModule } from './modules/cashier/cashier.module';
+import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { EmrModule } from './modules/emr/emr.module';
+import { TelegramModule } from './modules/telegram/telegram.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { NotificationsQueueModule } from './modules/notifications/notifications-queue.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
@@ -40,7 +49,12 @@ import { HealthController } from './health/health.controller';
 const schedulerModules =
   process.env.NODE_ENV === 'test'
     ? []
-    : [QueueModule, BillingSchedulerModule, FilesCleanupModule];
+    : [
+        QueueModule,
+        BillingSchedulerModule,
+        FilesCleanupModule,
+        NotificationsQueueModule,
+      ];
 
 @Module({
   imports: [
@@ -75,6 +89,14 @@ const schedulerModules =
     MembersModule,
     BillingModule,
     FilesModule,
+    PatientsModule,
+    ServicesModule,
+    CashierModule,
+    AppointmentsModule,
+    EmrModule,
+    TelegramModule,
+    NotificationsModule,
+    ReportsModule,
     ...schedulerModules,
   ],
   controllers: [HealthController],
