@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { getTenantStore } from '../../core/tenant/tenant-context';
+import { captureException } from '../../core/observability/sentry';
 
 interface ErrorBody {
   success: false;
@@ -72,6 +73,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.error(
         `${request.method} ${request.url} -> ${statusCode}: ${message}`,
       );
+    }
+
+    // Server xatolari (5xx) Sentry'ga yuboriladi (DSN yoqilgan bo'lsa).
+    if (statusCode >= 500) {
+      captureException(exception, {
+        requestId: getTenantStore()?.requestId,
+        method: request.method,
+        path: request.url,
+      });
     }
 
     const body: ErrorBody = {

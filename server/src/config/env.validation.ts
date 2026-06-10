@@ -126,6 +126,41 @@ export class EnvVars {
   @IsNumber()
   REPORTS_CACHE_TTL_SEC?: number;
 
+  // --- Maydon shifrlash (Phase 9B). Kalit base64(32 bayt). Faqat .env/secret-manager! ---
+  @IsString()
+  @IsOptional()
+  FIELD_ENCRYPTION_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  FIELD_ENCRYPTION_KEY_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  FIELD_ENCRYPTION_KEYS_OLD?: string;
+
+  // --- Observability (Phase 9A): pino + Sentry + Prometheus. Sirlar .env'da. ---
+  @IsString()
+  @IsOptional()
+  LOG_LEVEL?: string; // trace|debug|info|warn|error
+
+  @IsString()
+  @IsOptional()
+  SENTRY_DSN?: string;
+
+  @IsString()
+  @IsOptional()
+  SENTRY_ENV?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  SENTRY_TRACES_SAMPLE_RATE?: number;
+
+  @IsString()
+  @IsOptional()
+  METRICS_ENABLED?: string; // 'true' | 'false'
+
   // --- Notification / SMS (Phase 7A). Kalitlar faqat .env'da. ---
   @IsString()
   @IsOptional()

@@ -1,0 +1,5 @@
+# TLS sertifikatlar shu yerga qo'yiladi: fullchain.pem + privkey.pem
+# Self-signed (test) yaratish:
+#   openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+#     -keyout privkey.pem -out fullchain.pem -subj "/CN=crm.example.uz"
+# Production: Let's Encrypt (certbot) yoki sotib olingan sertifikat.

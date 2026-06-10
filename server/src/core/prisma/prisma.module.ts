@@ -1,6 +1,7 @@
 import { Global, Inject, Module } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { extendPrismaClient, ExtendedPrismaClient } from './prisma-extensions';
+import { CryptoService } from '../crypto/crypto.service';
 
 /**
  * Kengaytirilgan Prisma client uchun injection token'i.
@@ -18,9 +19,11 @@ export const InjectPrisma = () => Inject(EXTENDED_PRISMA);
     PrismaService,
     {
       provide: EXTENDED_PRISMA,
-      inject: [PrismaService],
-      useFactory: (base: PrismaService): ExtendedPrismaClient =>
-        extendPrismaClient(base),
+      inject: [PrismaService, CryptoService],
+      useFactory: (
+        base: PrismaService,
+        crypto: CryptoService,
+      ): ExtendedPrismaClient => extendPrismaClient(base, crypto),
     },
   ],
   exports: [PrismaService, EXTENDED_PRISMA],

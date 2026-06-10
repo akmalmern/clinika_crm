@@ -1,0 +1,44 @@
+# =============================================================================
+# Klinika CRM — Backend (NestJS) PRODUCTION image (multi-stage)
+# =============================================================================
+# Bosqichlar:
+#   build  — to'liq bog'liqliklar + prisma generate + nest build
+#   runner — yengil ishga tushirish (non-root, healthcheck, migrate deploy)
+# =============================================================================
+
+FROM node:20-alpine AS build
+RUN apk add --no-cache openssl
+WORKDIR /app
+COPY package*.json ./
+COPY prisma ./prisma
+RUN npm ci
+RUN npx prisma generate
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS runner
+RUN apk add --no-cache openssl wget
+WORKDIR /app
+ENV NODE_ENV=production
+
+# build bosqichidan: tayyor kod + node_modules (generatsiya qilingan prisma client
+# va migrate uchun prisma CLI shu yerda) + prisma schema/migrations.
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/prisma ./prisma
+COPY package*.json ./
+
+# Root bo'lmagan foydalanuvchi (eng kam imtiyoz — spec 10).
+RUN addgroup -S nodejs && adduser -S nodejs -G nodejs \
+  && chown -R nodejs:nodejs /app
+USER nodejs
+
+EXPOSE 3000
+
+# Liveness — orkestrator (compose/K8s) tekshiradi.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD wget -qO- http://localhost:3000/api/v1/health || exit 1
+
+# Ishga tushganda migratsiyani qo'llaydi (idempotent), so'ng serverni boshlaydi.
+# Seed (birinchi super admin) — alohida bir martalik ops qadam (README'ga qarang).
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]

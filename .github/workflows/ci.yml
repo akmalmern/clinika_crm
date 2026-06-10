@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Bir vaqtning o'zida bir branch uchun bitta ish (eski run bekor qilinadi).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend: lint -> type-check -> test (coverage) -> build
+  # ---------------------------------------------------------------------------
+  server:
+    name: Backend (lint · type-check · test · build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Lint
+        run: npx eslint "{src,test}/**/*.ts" --max-warnings=0
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit + e2e tests (coverage)
+        run: npm run test:cov
+        env:
+          NODE_ENV: test
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage
+          path: server/coverage
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Frontend: lint -> type-check -> build
+  # ---------------------------------------------------------------------------
+  client:
+    name: Frontend (lint · type-check · build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+  # ---------------------------------------------------------------------------
+  # Xavfsizlik: npm audit + Trivy (FS) skani. Bloklamaydi (xabar beradi).
+  # ---------------------------------------------------------------------------
+  security:
+    name: Security scan (npm audit · Trivy)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: npm audit (backend)
+        working-directory: server
+        run: npm audit --audit-level=high || true
+
+      - name: npm audit (frontend)
+        working-directory: client
+        run: npm audit --audit-level=high || true
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0' # hisobot beradi, quvurni to'xtatmaydi
+
+  # ---------------------------------------------------------------------------
+  # Deploy (SHABLON) — qo'lda (workflow_dispatch) yoki main'ga merge'da.
+  # Haqiqiy deploy buyruqlari infratuzilmaga qarab to'ldiriladi.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy (template)
+    needs: [server, client]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy placeholder
+        run: |
+          echo "Bu yerda image build + push (registry) + remote 'docker compose -f docker-compose.prod.yml up -d' bajariladi."
+          echo "Sirlar GitHub Environments/Secrets orqali beriladi (server'da .env.production EMAS)."

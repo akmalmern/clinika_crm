@@ -10,6 +10,9 @@ import { PrismaModule } from './core/prisma/prisma.module';
 import { RedisModule } from './core/redis/redis.module';
 import { StorageModule } from './core/storage/storage.module';
 import { QueueModule } from './core/queue/queue.module';
+import { AppLoggerModule } from './core/observability/logger.module';
+import { MetricsModule } from './core/metrics/metrics.module';
+import { CryptoModule } from './core/crypto/crypto.module';
 
 import { AuditModule } from './modules/audit/audit.module';
 import { AuditInterceptor } from './modules/audit/audit.interceptor';
@@ -75,7 +78,12 @@ const schedulerModules =
       },
     }),
 
-    // Core infratuzilma
+    // Observability (strukturalangan log + Prometheus metrikalar)
+    AppLoggerModule,
+    MetricsModule,
+
+    // Core infratuzilma (CryptoModule PrismaModule'dan oldin — extension kalit oladi)
+    CryptoModule,
     PrismaModule,
     RedisModule,
     StorageModule,

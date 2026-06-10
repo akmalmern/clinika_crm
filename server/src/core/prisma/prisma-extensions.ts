@@ -168,10 +168,126 @@ export function applyClinicScope(params: {
   return a;
 }
 
+// =============================================================================
+// MAYDON DARAJASIDA SHIFRLASH (Phase 9B, encryption at rest)
+// =============================================================================
+// Nozik maydonlar yozishda shifrlanadi, o'qishda deshifrlanadi — SHAFFOF.
+// Ustun TEXT bo'lgani uchun ciphertext O'SHA ustunda saqlanadi (sxema o'zgarmaydi).
+// `decrypt` ochiq qiymatni ham o'qiydi -> backfill davomida xavfsiz (expand-contract).
+
+/** Model -> shifrlanadigan maydonlar. FAQAT qidirilmaydigan nozik matn. */
+export const ENCRYPTED_FIELDS: Record<string, string[]> = {
+  MedicalRecord: ['diagnosis', 'complaints', 'treatment', 'notes'],
+  Patient: ['allergies', 'address', 'notes'],
+};
+
+/** Shifrlash uchun minimal interfeys (CryptoService bilan mos). */
+export interface FieldCipher {
+  enabled: boolean;
+  encrypt(plain: string): string;
+  decrypt(value: string): string;
+  isEncrypted(value: unknown): value is string;
+}
+
+function encryptValue(cipher: FieldCipher, value: unknown): unknown {
+  if (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    !cipher.isEncrypted(value)
+  ) {
+    return cipher.encrypt(value);
+  }
+  // Prisma update: `{ set: '...' }` shaklini ham qo'llab-quvvatlaymiz.
+  if (value && typeof value === 'object' && 'set' in value) {
+    const v = value.set;
+    if (typeof v === 'string' && v.length > 0 && !cipher.isEncrypted(v)) {
+      return { set: cipher.encrypt(v) };
+    }
+  }
+  return value;
+}
+
+/** Yozish argumentidagi (data) nozik maydonlarni shifrlaydi. */
+export function encryptWriteData(
+  model: string,
+  data: Record<string, unknown>,
+  cipher: FieldCipher,
+): void {
+  const fields = ENCRYPTED_FIELDS[model];
+  if (!fields) return;
+  for (const f of fields) {
+    if (f in data && data[f] != null) {
+      data[f] = encryptValue(cipher, data[f]);
+    }
+  }
+}
+
+function encryptArgs(
+  model: string,
+  operation: string,
+  args: any,
+  cipher: FieldCipher,
+): void {
+  if (
+    operation === 'create' ||
+    operation === 'update' ||
+    operation === 'updateMany'
+  ) {
+    if (args.data && typeof args.data === 'object') {
+      if (Array.isArray(args.data)) {
+        for (const row of args.data) encryptWriteData(model, row, cipher);
+      } else {
+        encryptWriteData(model, args.data, cipher);
+      }
+    }
+  } else if (
+    operation === 'createMany' ||
+    operation === 'createManyAndReturn'
+  ) {
+    const data = args.data;
+    if (Array.isArray(data)) {
+      for (const row of data) encryptWriteData(model, row, cipher);
+    } else if (data && typeof data === 'object') {
+      encryptWriteData(model, data, cipher);
+    }
+  } else if (operation === 'upsert') {
+    if (args.create) encryptWriteData(model, args.create, cipher);
+    if (args.update) encryptWriteData(model, args.update, cipher);
+  }
+}
+
+/** Bitta natija qatoridagi nozik maydonlarni deshifrlaydi (joyida). */
+export function decryptRow(
+  model: string,
+  row: Record<string, unknown>,
+  cipher: FieldCipher,
+): void {
+  const fields = ENCRYPTED_FIELDS[model];
+  if (!fields || !row) return;
+  for (const f of fields) {
+    const v = row[f];
+    if (typeof v === 'string' && cipher.isEncrypted(v)) {
+      row[f] = cipher.decrypt(v);
+    }
+  }
+}
+
+function decryptResult(model: string, result: any, cipher: FieldCipher): void {
+  if (!result || typeof result !== 'object') return;
+  if (Array.isArray(result)) {
+    for (const row of result) {
+      if (row && typeof row === 'object') decryptRow(model, row, cipher);
+    }
+  } else {
+    decryptRow(model, result, cipher);
+  }
+}
+
 /**
- * Prisma client'ni Klinika CRM qoidalari bilan kengaytiradi.
+ * Prisma client'ni Klinika CRM qoidalari bilan kengaytiradi (tenant + soft-delete
+ * + UUID v7 + maydon shifrlash). `cipher` berilmasa shifrlash o'tkazib yuboriladi.
  */
-export function extendPrismaClient(base: PrismaClient) {
+export function extendPrismaClient(base: PrismaClient, cipher?: FieldCipher) {
   return base.$extends({
     name: 'clinic-crm-tenant',
     query: {
@@ -183,7 +299,19 @@ export function extendPrismaClient(base: PrismaClient) {
             args,
             store: getTenantStore(),
           });
-          return query(scoped);
+
+          // Yozishda shifrlash (model nozik maydonga ega bo'lsa).
+          if (cipher?.enabled && model && ENCRYPTED_FIELDS[model]) {
+            encryptArgs(model, operation, scoped, cipher);
+          }
+
+          const result = await query(scoped);
+
+          // O'qishda deshifrlash.
+          if (cipher && model && ENCRYPTED_FIELDS[model]) {
+            decryptResult(model, result, cipher);
+          }
+          return result;
         },
       },
     },

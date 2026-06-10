@@ -64,6 +64,19 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /**
+   * Health-check (spec 10): object storage bog'lanishini tekshiradi (HeadBucket).
+   * Tez va yon ta'sirsiz. Ulanmasa false qaytaradi (exception otmaydi).
+   */
+  async ping(): Promise<boolean> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Faylni yuklaydi (server orqali, validatsiyadan keyin). */
   async putObject(input: PutObjectInput): Promise<void> {
     await this.client.send(

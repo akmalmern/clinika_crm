@@ -1,1 +1,30 @@
 .claude/settings.local.json
+
+# Sirlar — HECH QACHON commit qilinmaydi
+.env
+.env.*
+!.env.example
+!.env.production.example
+!.env.local.example
+server/.env
+client/.env.local
+
+# TLS sertifikatlar
+nginx/certs/*.pem
+nginx/certs/*.key
+
+# Bog'liqliklar / build
+node_modules/
+dist/
+.next/
+out/
+coverage/
+
+# Backup nusxalari (HECH QACHON commit qilinmaydi)
+.backups/
+*.dump
+
+# Boshqalar
+*.log
+.DS_Store
+server/dump.rdb

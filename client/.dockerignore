@@ -1,12 +1,10 @@
 node_modules
-dist
-coverage
+.next
+out
 .git
 .env
-.env.*
-!.env.example
+.env*.local
 *.log
 .DS_Store
 .vscode
 .idea
-dump.rdb

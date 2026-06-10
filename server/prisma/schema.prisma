@@ -124,8 +124,11 @@ model ClinicMember {
 /// Audit log. updated_at/deleted_at YO'Q — faqat qo'shiladi, o'zgartirilmaydi.
 /// clinic_id null bo'lishi mumkin (super admin harakatlari uchun).
 /// Tashqi FK qo'yilmaydi — log egasi o'chsa ham saqlanib qolsin (immutability).
+/// Phase 9B: VAQT bo'yicha oylik PARTITION — PK partition kalitini (created_at)
+/// o'z ichiga oladi (@@id([id, createdAt])). Partition CHILD jadvallari ops/db
+/// skriptlari bilan boshqariladi (prod: `migrate deploy`).
 model AuditLog {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String   @default(uuid()) @db.Uuid
   clinicId  String?  @map("clinic_id") @db.Uuid
   userId    String?  @map("user_id") @db.Uuid
   actorType String   @map("actor_type") // SUPER_ADMIN | USER | SYSTEM
@@ -137,6 +140,7 @@ model AuditLog {
   userAgent String?  @map("user_agent")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  @@id([id, createdAt])
   @@index([clinicId, createdAt])
   @@index([userId])
   @@index([entity, entityId])

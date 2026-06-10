@@ -117,6 +117,28 @@ export interface ClickConfig {
   merchantUserId: string;
 }
 
+export interface CryptoConfig {
+  /** Joriy (primary) shifrlash kaliti — base64(32 bayt). Bo'sh bo'lsa shifrlash o'chiq. */
+  fieldKey?: string;
+  /** Joriy kalit identifikatori (token ichida saqlanadi). Default 'k1'. */
+  fieldKeyId: string;
+  /** Rotatsiya: eski kalitlar deshifrlash uchun — "id1:base64,id2:base64". */
+  fieldKeysOld?: string;
+}
+
+export interface ObservabilityConfig {
+  /** pino log darajasi: trace|debug|info|warn|error. Prod default 'info'. */
+  logLevel: string;
+  /** Sentry DSN (bo'sh bo'lsa Sentry o'chiq). Faqat .env'da. */
+  sentryDsn?: string;
+  /** Sentry environment yorlig'i (production/staging/...). */
+  sentryEnv: string;
+  /** Tracing namuna olish darajasi (0..1). Default 0 (o'chiq). */
+  sentryTracesSampleRate: number;
+  /** Prometheus /metrics yoqilganmi (default ha). */
+  metricsEnabled: boolean;
+}
+
 export default () => ({
   app: {
     env: process.env.NODE_ENV ?? 'development',
@@ -217,4 +239,22 @@ export default () => ({
     secretKey: process.env.CLICK_SECRET_KEY ?? '',
     merchantUserId: process.env.CLICK_MERCHANT_USER_ID ?? '',
   } satisfies ClickConfig,
+
+  crypto: {
+    fieldKey: process.env.FIELD_ENCRYPTION_KEY || undefined,
+    fieldKeyId: process.env.FIELD_ENCRYPTION_KEY_ID ?? 'k1',
+    fieldKeysOld: process.env.FIELD_ENCRYPTION_KEYS_OLD || undefined,
+  } satisfies CryptoConfig,
+
+  observability: {
+    logLevel:
+      process.env.LOG_LEVEL ??
+      (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+    sentryDsn: process.env.SENTRY_DSN || undefined,
+    sentryEnv: process.env.SENTRY_ENV ?? process.env.NODE_ENV ?? 'development',
+    sentryTracesSampleRate: parseFloat(
+      process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0',
+    ),
+    metricsEnabled: (process.env.METRICS_ENABLED ?? 'true') !== 'false',
+  } satisfies ObservabilityConfig,
 });
