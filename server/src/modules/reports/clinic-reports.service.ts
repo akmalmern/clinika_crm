@@ -179,7 +179,10 @@ export class ClinicReportsService {
       }));
       const totalCount = byMethod.reduce((a, r) => a + r.count, 0);
       const totalAmount = byMethod
-        .reduce((a, r) => a.plus(new Prisma.Decimal(r.total)), new Prisma.Decimal(0))
+        .reduce(
+          (a, r) => a.plus(new Prisma.Decimal(r.total)),
+          new Prisma.Decimal(0),
+        )
         .toString();
 
       return {
@@ -231,7 +234,8 @@ export class ClinicReportsService {
       }));
       const apptTotal = byStatus.reduce((a, r) => a + r.count, 0);
       const noShowCount =
-        byStatus.find((s) => s.status === AppointmentStatus.NO_SHOW)?.count ?? 0;
+        byStatus.find((s) => s.status === AppointmentStatus.NO_SHOW)?.count ??
+        0;
       const newPatientsTotal = newPatientsRaw.reduce(
         (a, r) => a + num(r.count),
         0,

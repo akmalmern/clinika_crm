@@ -45,7 +45,7 @@ export function decStr(v: unknown): string {
 /** Raw natijadagi son (int/bigint) -> JS number. */
 export function num(v: unknown): number {
   if (v === null || v === undefined) return 0;
-  return typeof v === 'bigint' ? Number(v) : Number(v as number);
+  return typeof v === 'bigint' ? Number(v) : Number(v);
 }
 
 /** date_trunc natijasi (timestamp) -> 'YYYY-MM-DD' (mahalliy bucket sanasi). */

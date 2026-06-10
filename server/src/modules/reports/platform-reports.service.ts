@@ -15,10 +15,7 @@ import type {
   RangeMeta,
   StatusCount,
 } from './clinic-reports.service';
-import {
-  ReportRangeQueryDto,
-  ReportTopQueryDto,
-} from './dto/report-query.dto';
+import { ReportRangeQueryDto, ReportTopQueryDto } from './dto/report-query.dto';
 import {
   decStr,
   formatPeriod,
@@ -146,7 +143,8 @@ export class PlatformReportsService {
         },
         subscriptions: {
           active:
-            subs.find((s) => s.status === SubscriptionStatus.ACTIVE)?.count ?? 0,
+            subs.find((s) => s.status === SubscriptionStatus.ACTIVE)?.count ??
+            0,
           byStatus: subs,
         },
       };
@@ -202,7 +200,11 @@ export class PlatformReportsService {
         .toString();
 
       return {
-        range: { from: fromDate.toISOString(), to: toDate.toISOString(), groupBy: query.groupBy },
+        range: {
+          from: fromDate.toISOString(),
+          to: toDate.toISOString(),
+          groupBy: query.groupBy,
+        },
         byPeriod: byPeriodRaw.map((r) => ({
           period: formatPeriod(r.period),
           count: num(r.count),
@@ -243,7 +245,7 @@ export class PlatformReportsService {
           WHERE s.deleted_at IS NULL
             AND s.status IN (${Prisma.join(activeLike)})
             AND s.next_billing_date >= now()
-            AND s.next_billing_date < now() + make_interval(days => ${days})
+            AND s.next_billing_date < now() + make_interval(days => ${days}::int)
           ORDER BY s.next_billing_date ASC
           LIMIT 100
         `),
@@ -324,7 +326,11 @@ export class PlatformReportsService {
         LIMIT ${limit}
       `);
       return {
-        range: { from: fromDate.toISOString(), to: toDate.toISOString(), groupBy: query.groupBy },
+        range: {
+          from: fromDate.toISOString(),
+          to: toDate.toISOString(),
+          groupBy: query.groupBy,
+        },
         rows: rows.map((r) => ({
           clinicId: r.clinic_id,
           clinicName: r.clinic_name,

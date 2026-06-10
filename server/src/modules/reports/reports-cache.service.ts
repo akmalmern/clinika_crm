@@ -26,7 +26,11 @@ export class ReportsCacheService {
    * Kesh kalitini barqaror (deterministik) quradi: prefix:scope:report:params.
    * params obyekti tartiblangan kalitlar bilan -> bir xil so'rov bir xil kalit.
    */
-  buildKey(scope: string, report: string, params: Record<string, unknown>): string {
+  buildKey(
+    scope: string,
+    report: string,
+    params: Record<string, unknown>,
+  ): string {
     const sorted = Object.keys(params)
       .sort()
       .map((k) => `${k}=${stringifyParam(params[k])}`)
@@ -45,7 +49,9 @@ export class ReportsCacheService {
       const cached = await this.redis.get(key);
       if (cached !== null) return JSON.parse(cached) as T;
     } catch (err) {
-      this.logger.warn(`Kesh o'qishda xato (e'tiborsiz): ${(err as Error)?.message}`);
+      this.logger.warn(
+        `Kesh o'qishda xato (e'tiborsiz): ${(err as Error)?.message}`,
+      );
     }
 
     const fresh = await compute();
@@ -53,7 +59,9 @@ export class ReportsCacheService {
     try {
       await this.redis.set(key, JSON.stringify(fresh), this.ttl);
     } catch (err) {
-      this.logger.warn(`Kesh yozishda xato (e'tiborsiz): ${(err as Error)?.message}`);
+      this.logger.warn(
+        `Kesh yozishda xato (e'tiborsiz): ${(err as Error)?.message}`,
+      );
     }
     return fresh;
   }
@@ -62,5 +70,13 @@ export class ReportsCacheService {
 function stringifyParam(v: unknown): string {
   if (v === undefined || v === null) return '';
   if (v instanceof Date) return v.toISOString();
-  return String(v);
+  if (
+    typeof v === 'string' ||
+    typeof v === 'number' ||
+    typeof v === 'boolean'
+  ) {
+    return String(v);
+  }
+  // Boshqa (obyekt) tur — kesh kalitida kutilmaydi, ammo xavfsiz seriyalash.
+  return JSON.stringify(v);
 }

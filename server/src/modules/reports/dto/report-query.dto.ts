@@ -23,7 +23,10 @@ export class ReportRangeQueryDto {
   @IsISO8601()
   to?: string;
 
-  @ApiPropertyOptional({ enum: ALL_REPORT_GROUP_BY, default: ReportGroupBy.DAY })
+  @ApiPropertyOptional({
+    enum: ALL_REPORT_GROUP_BY,
+    default: ReportGroupBy.DAY,
+  })
   @IsOptional()
   @IsIn(ALL_REPORT_GROUP_BY)
   groupBy: string = ReportGroupBy.DAY;

@@ -63,7 +63,12 @@ export class ReportExportService {
     let y = top - lineHeight * 1.6;
     // Sarlavha qatori
     table.headers.forEach((h, i) => {
-      lines.push({ x: left + i * colWidth, y, size: 10, text: clip(h, colWidth) });
+      lines.push({
+        x: left + i * colWidth,
+        y,
+        size: 10,
+        text: clip(h, colWidth),
+      });
     });
     y -= lineHeight;
 
